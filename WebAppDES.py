@@ -1,7 +1,7 @@
 from enum import Enum
 
-from rngs import selectStream, plantSeeds
-from rvgs import Exponential
+from rngs import select_stream, plant_seeds
+from rvgs import exponential
 
 START = 0.0  # initial time                   
 STOP = 20000.0  # terminal time
@@ -16,8 +16,8 @@ def get_arrival():
 
     global arrivalTemp
 
-    selectStream(0)
-    arrivalTemp += Exponential(1.2)
+    select_stream(0)
+    arrivalTemp += exponential(1.2)
     return arrivalTemp
 
 
@@ -32,21 +32,21 @@ class JobType(Enum):
 def get_service(job_type):
     rate = -1
     if job_type == JobType.A1:
-        selectStream(1)
+        select_stream(1)
         rate = 0.2
     elif job_type == JobType.A2:
-        selectStream(2)
+        select_stream(2)
         rate = 0.4
     elif job_type == JobType.A3:
-        selectStream(3)
+        select_stream(3)
         rate = 0.1
     elif job_type == JobType.B:
-        selectStream(4)
+        select_stream(4)
         rate = 0.8
     elif job_type == JobType.P:
-        selectStream(5)
+        select_stream(5)
         rate = 0.4
-    return Exponential(rate)
+    return exponential(rate)
 
 
 class Track:
@@ -102,7 +102,7 @@ def main():
 
     t = Time()
 
-    plantSeeds(123456789)
+    plant_seeds(123456789)
 
     jobs_a = []
     jobs_b = []
