@@ -4,20 +4,16 @@ from rngs import select_stream, plant_seeds
 from rvgs import exponential
 
 START = 0.0  # initial time                   
-STOP = 3000.0  # terminal time
+STOP = 3600.0  # terminal time
 INFINITY = (100.0 * STOP)  # must be much larger than STOP  
 arrivalTemp = START
 
 
 def get_arrival():
-    # ---------------------------------------------
-    # generate the next arrival_a time, with rate 1.2
-    # ---------------------------------------------
-
     global arrivalTemp
 
     select_stream(0)
-    arrivalTemp += exponential(1.2)
+    arrivalTemp += exponential(1.0 / 1.2)
     return arrivalTemp
 
 
@@ -50,18 +46,24 @@ def get_service(job_type):
 
 
 class Track:
-    node = 0.0  # time integrated number in the node  
-    queue = 0.0  # time integrated number in the queue 
-    service = 0.0  # time integrated number in service   
+    def __init__(self):
+        self.node = 0.0  # time integrated number in the node
+        self.service = 0.0  # time integrated number in service
+
+    def update(self, current_time, next_time, number):
+        self.node += (next_time - current_time) * number
+        self.service += (next_time - current_time) #* number
 
 
 class Time:
-    arrival_a1 = -1  # next arrival_a time
-    arrival_a2 = -1
+    arrival_a1 = -1  # next arrival time for jobs of type A1
+    arrival_a2 = -1  # next arrival time for jobs of type A2
+    arrival_a3 = -1  # next arrival time for jobs of type A3
     arrival_b = -1  # next arrival_b time
+    arrival_p = -1
     completion_a = -1  # next completion time on server A
-    completion_b = -1  # next completion time on server A
-    completion_p = -1  # next completion time on server A
+    completion_b = -1  # next completion time on server B
+    completion_p = -1  # next completion time on server P
     current = -1  # current time                        
     next = -1  # next (most imminent) event time     
     last = -1  # last arrival_a time                   
@@ -76,20 +78,15 @@ class Job:
 
 
 def get_min_remaining_process_time(jobs):
-    min_remaining = jobs[0].remaining
-    for job in jobs:
-        if job.remaining < min_remaining:
-            min_remaining = job.remaining
-    return min_remaining
+    min_job = min(jobs, key=lambda job: job.remaining)
+    return min_job.remaining
 
 
 def is_there_a_completion(jobs, process_time):
-    _min = jobs[0].remaining
-    for job in jobs:
-        if job.remaining <= _min:
-            _min = job.remaining
-    if _min <= process_time:
-        return True, _min
+    min_job = min(jobs, key=lambda job: job.remaining)
+    min_reaming = min_job.remaining
+    if min_reaming <= process_time:
+        return True, min_reaming
     return False, 0
 
 
@@ -115,35 +112,36 @@ def main():
     jobs_a = []
     jobs_b = []
     jobs_p = []
+
     t.current = START  # set the clock                         
     t.arrival_a1 = get_arrival()  # schedule the first arrival_a
     t.arrival_a2 = INFINITY
+    t.arrival_a3 = INFINITY
     t.arrival_b = INFINITY
+    t.arrival_p = INFINITY
     t.completion_a = INFINITY
     t.completion_b = INFINITY
     t.completion_p = INFINITY
 
-    while t.arrival_a1 < STOP or t.arrival_a2 != INFINITY or t.arrival_b != INFINITY or number_a > 0 or number_b > 0:
-        t.next = min(t.arrival_a1, t.arrival_a2, t.arrival_b, t.completion_a, t.completion_b, t.completion_p)  # next event time
+    while (t.arrival_a1 < STOP or t.arrival_a2 != INFINITY or t.arrival_a3 != INFINITY or t.arrival_b != INFINITY or
+           t.arrival_p != INFINITY or number_a > 0 or number_b > 0 or number_p > 0):
 
-        if number_a > 0:  # update integrals
-            area_a.node += (t.next - t.current) * number_a
-            area_a.queue += (t.next - t.current) * (number_a - 1)
-            area_a.service += (t.next - t.current)
+        t.next = min(t.arrival_a1, t.arrival_a2, t.arrival_a3, t.arrival_b, t.arrival_p, t.completion_a, t.completion_b,
+                     t.completion_p)  # next event time
 
+        # update integrals
+        if number_a > 0:
+            area_a.update(t.current, t.next, number_a)
         if number_b > 0:
-            area_b.node += (t.next - t.current) * number_b
-            area_b.queue += (t.next - t.current) * (number_b - 1)
-            area_b.service += (t.next - t.current)
-
+            area_b.update(t.current, t.next, number_b)
         if number_p > 0:
-            area_p.node += (t.next - t.current) * number_p
-            area_p.queue += (t.next - t.current) * (number_p - 1)
-            area_p.service += (t.next - t.current)
+            area_p.update(t.current, t.next, number_p)
 
         t.current = t.next  # advance the clock
+
         # arrival_a1
         if t.current == t.arrival_a1:
+            print(f"Arrival a1, number_a = {number_a}")
             if t.completion_a > t.arrival_a1 and t.completion_a != INFINITY and number_a > 0:
                 processed_time = (t.current - jobs_a[-1].last_event) / number_a
                 for job in jobs_a:
@@ -157,9 +155,10 @@ def main():
             if t.arrival_a1 > STOP:
                 t.last = t.current
                 t.arrival_a1 = INFINITY
-                process_time = get_min_remaining_process_time(jobs_a) * number_a
+                process_time = min(get_min_remaining_process_time(jobs_a) * number_a,
+                                   (min(t.completion_b, t.completion_p) - t.current) / number_a)
             else:
-                process_time = (t.arrival_a1 - t.current) / number_a
+                process_time = (min(t.arrival_a1, t.completion_b, t.completion_p) - t.current) / number_a
 
             complete, remaining = is_there_a_completion(jobs_a, process_time)
 
@@ -168,19 +167,27 @@ def main():
             else:
                 t.completion_a = INFINITY
 
+        # arrival_a2
         elif t.current == t.arrival_a2:
+            print(f"Arrival a2, number_a = {number_a}")
             if t.completion_a > t.arrival_a2 and t.completion_a != INFINITY and number_a > 0:
                 processed_time = (t.current - jobs_a[-1].last_event) / number_a
                 for job in jobs_a:
                     job.remaining -= processed_time
                     job.last_event = t.current
 
-            jobs_a.append(Job(t.arrival_a1, JobType.A2))
+            jobs_a.append(Job(t.arrival_a2, JobType.A2))
             number_a += 1
 
             t.arrival_a2 = INFINITY
 
-            process_time = get_min_remaining_process_time(jobs_a) * number_a
+            if t.arrival_a1 > STOP:
+                process_time = min(get_min_remaining_process_time(jobs_a) * number_a,
+                                   (min(t.completion_b, t.completion_p) - t.current) / number_a)
+            else:
+                process_time = (min(t.arrival_a1, t.completion_b, t.completion_p) - t.current) / number_a
+
+            # process_time = get_min_remaining_process_time(jobs_a) * number_a
 
             complete, remaining = is_there_a_completion(jobs_a, process_time)
 
@@ -189,11 +196,36 @@ def main():
             else:
                 t.completion_a = INFINITY
 
+        # arrival_a3
+        elif t.current == t.arrival_a3:
+            print(f"Arrival a3, number_a = {number_a}")
+            if t.completion_a > t.arrival_a3 and t.completion_a != INFINITY and number_a > 0:
+                processed_time = (t.current - jobs_a[-1].last_event) / number_a
+                for job in jobs_a:
+                    job.remaining -= processed_time
+                    job.last_event = t.current
 
-        elif t.current == t.arrival_b: # process arrival_b
-            print("Process arrival_b")
-            print(f"Job in B: {number_b}")
+            jobs_a.append(Job(t.arrival_a3, JobType.A3))
+            number_a += 1
 
+            t.arrival_a3 = INFINITY
+
+            if t.arrival_a1 > STOP:
+                process_time = min(get_min_remaining_process_time(jobs_a) * number_a,
+                                   (min(t.completion_b, t.completion_p) - t.current) / number_a)
+            else:
+                process_time = (min(t.arrival_a1, t.completion_b, t.completion_p) - t.current) / number_a
+
+            complete, remaining = is_there_a_completion(jobs_a, process_time)
+
+            if complete:
+                t.completion_a = t.current + remaining
+            else:
+                t.completion_a = INFINITY
+
+        # arrival_b
+        elif t.current == t.arrival_b:
+            print(f"Arrival b, number_b = {number_b}")
             if t.completion_b > t.arrival_b and t.completion_b != INFINITY:
                 processed_time = (t.current - jobs_b[-1].last_event) / number_b
                 for job in jobs_b:
@@ -211,14 +243,35 @@ def main():
 
             if complete:
                 t.completion_b = t.current + remaining
-                process_time = remaining
             else:
                 t.completion_b = INFINITY
 
-        elif t.current == t.completion_a:
-            print("Process completion_a")
-            print(f"Job in A: {number_b}")
+        # arrival_p
+        elif t.current == t.arrival_p:
+            print(f"Arrival p, number_p = {number_p}")
+            if t.completion_p > t.arrival_p and t.completion_p != INFINITY:
+                processed_time = (t.current - jobs_p[-1].last_event) / number_p
+                for job in jobs_p:
+                    job.remaining -= processed_time
+                    job.last_event = t.current
 
+            jobs_p.append(Job(t.arrival_p, JobType.P))
+            number_p += 1
+
+            t.arrival_p = INFINITY
+
+            process_time = get_min_remaining_process_time(jobs_p) * number_p
+
+            complete, remaining = is_there_a_completion(jobs_p, process_time)
+
+            if complete:
+                t.completion_p = t.current + remaining
+            else:
+                t.completion_p = INFINITY
+
+        # completion_a
+        elif t.current == t.completion_a:
+            print(f"Completion a, number_a = {number_a}")
             processed_time = get_min_remaining_process_time(jobs_a)
             completed_job = None
 
@@ -231,41 +284,40 @@ def main():
                     completed_job = job
                     jobs_a.remove(job)
                     break
-            
+
             if completed_job.job_type == JobType.A1:
                 index_a += 1
                 number_a -= 1
                 t.arrival_b = t.current
-                
+
             if completed_job.job_type == JobType.A2:
                 index_a += 1
                 number_a -= 1
-                #jobs_b.append(Job(t.current, JobType.P))
-                #number_p += 1
-                
+                t.arrival_p = t.current
+
             if completed_job.job_type == JobType.A3:
                 index_a += 1
                 number_a -= 1
-        
+
             if number_a > 0:
-                if t.arrival_a1 > STOP or t.arrival_a1 == INFINITY:
+                if t.arrival_a1 == INFINITY and t.completion_b == INFINITY and t.completion_p == INFINITY:
                     process_time = get_min_remaining_process_time(jobs_a) * number_a
                 else:
-                    process_time = (t.arrival_a1 - t.current) / number_a
+                    process_time = (min(t.arrival_a1, t.completion_b, t.completion_p) - t.current) / number_a
 
                 complete, remaining = is_there_a_completion(jobs_a, process_time)
 
                 if complete:
                     t.completion_a = t.current + remaining
-                    process_time = remaining
                 else:
                     t.completion_a = INFINITY
 
             else:
                 t.completion_a = INFINITY
 
-        # completion B
+        # completion_b
         elif t.current == t.completion_b:
+            print(f"Completion b, number_b = {number_b}")
             processed_time = get_min_remaining_process_time(jobs_b)
 
             for job in jobs_b:
@@ -297,27 +349,63 @@ def main():
             else:
                 t.completion_b = INFINITY
 
+        # completion_p
+        elif t.current == t.completion_p:
+            print(f"Completion p, number_p = {number_p}")
+            processed_time = get_min_remaining_process_time(jobs_p)
 
+            for job in jobs_p:
+                job.remaining -= processed_time
+                job.last_event = t.current
+
+            for job in jobs_p:
+                if job.remaining == 0:
+                    jobs_p.remove(job)
+                    break
+
+            index_p += 1
+            number_p -= 1
+
+            t.arrival_a3 = t.current
+
+            if number_p > 0:
+                if t.arrival_p == INFINITY:
+                    process_time = get_min_remaining_process_time(jobs_p) * number_p
+                else:
+                    process_time = (t.arrival_p - t.current) / number_p
+
+                complete, remaining = is_there_a_completion(jobs_p, process_time)
+
+                if complete:
+                    t.completion_p = t.current + remaining
+                else:
+                    t.completion_p = INFINITY
+            else:
+                t.completion_p = INFINITY
 
     print("Server A statistics")
     print("for {0} jobs".format(index_a))
     print("\taverage interarrival time = {0:6.2f}".format(t.last / index_a))
     print("\taverage wait ............ = {0:6.2f}".format(area_a.node / index_a))
-    print("\taverage delay ........... = {0:6.2f}".format(area_a.queue / index_a))
     print("\taverage service time .... = {0:6.2f}".format(area_a.service / index_a))
     print("\taverage # in the node ... = {0:6.2f}".format(area_a.node / t.current))
-    print("\taverage # in the queue .. = {0:6.2f}".format(area_a.queue / t.current))
     print("\tutilization ............. = {0:6.2f}".format(area_a.service / t.current))
 
     print("Server B statistics")
     print("for {0} jobs".format(index_b))
     print("\taverage interarrival time = {0:6.2f}".format(t.last / index_b))
     print("\taverage wait ............ = {0:6.2f}".format(area_b.node / index_b))
-    print("\taverage delay ........... = {0:6.2f}".format(area_b.queue / index_b))
     print("\taverage service time .... = {0:6.2f}".format(area_b.service / index_b))
     print("\taverage # in the node ... = {0:6.2f}".format(area_b.node / t.current))
-    print("\taverage # in the queue .. = {0:6.2f}".format(area_b.queue / t.current))
     print("\tutilization ............. = {0:6.2f}".format(area_b.service / t.current))
+
+    print("Server P statistics")
+    print("for {0} jobs".format(index_p))
+    print("\taverage interarrival time = {0:6.2f}".format(t.last / index_p))
+    print("\taverage wait ............ = {0:6.2f}".format(area_p.node / index_p))
+    print("\taverage service time .... = {0:6.2f}".format(area_p.service / index_p))
+    print("\taverage # in the node ... = {0:6.2f}".format(area_p.node / t.current))
+    print("\tutilization ............. = {0:6.2f}".format(area_p.service / t.current))
 
 
 if __name__ == "__main__":
