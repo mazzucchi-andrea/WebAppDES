@@ -435,7 +435,7 @@ def main():
                 for arrival_rate in arrival_rates:
                     print(f"Simulate seed {seed}, arrival_rate {arrival_rate} and auth type {auth}")
                     data = [seed, auth, arrival_rate]
-                    data += model(seed, 1.2, auth)
+                    data += model(seed, arrival_rate, auth)
                     print()
                     writer.writerow(data)
 
