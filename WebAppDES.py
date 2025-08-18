@@ -1,7 +1,7 @@
 import csv
 from enum import Enum
 
-from rngs import select_stream, plant_seeds
+from rngs import select_stream, plant_seeds, get_seed
 from rvgs import exponential
 
 START = 0.0  # initial time
@@ -97,7 +97,7 @@ def is_there_a_completion(jobs, process_time):
     return False, 0
 
 
-def model(seed, arrival_rate, auth):
+def model(arrival_rate, auth):
     global arrivalTemp
     arrivalTemp = START
 
@@ -114,8 +114,6 @@ def model(seed, arrival_rate, auth):
     area_p = Track()
 
     t = Time()
-
-    plant_seeds(seed)
 
     jobs_a = []
     jobs_b = []
@@ -149,7 +147,6 @@ def model(seed, arrival_rate, auth):
 
         # arrival_a1
         if t.current == t.arrival_a1:
-            # print(f"Arrival a1, number_a = {number_a}")
             if number_a > 0:
                 processed_time = (t.current - jobs_a[-1].last_event) / number_a
                 for job in jobs_a:
@@ -181,7 +178,6 @@ def model(seed, arrival_rate, auth):
 
         # arrival_a2
         elif t.current == t.arrival_a2:
-            # print(f"Arrival a2, number_a = {number_a}")
             if number_a > 0:
                 processed_time = (t.current - jobs_a[-1].last_event) / number_a
                 for job in jobs_a:
@@ -207,7 +203,6 @@ def model(seed, arrival_rate, auth):
 
         # arrival_a3
         elif t.current == t.arrival_a3:
-            # print(f"Arrival a3, number_a = {number_a}")
             if number_a > 0:
                 processed_time = (t.current - jobs_a[-1].last_event) / number_a
                 for job in jobs_a:
@@ -233,7 +228,6 @@ def model(seed, arrival_rate, auth):
 
         # arrival_b
         elif t.current == t.arrival_b:
-            # print(f"Arrival b, number_b = {number_b}")
             if number_b > 0:
                 processed_time = (t.current - jobs_b[-1].last_event) / number_b
                 for job in jobs_b:
@@ -247,10 +241,8 @@ def model(seed, arrival_rate, auth):
 
             t.completion_b = t.current + (get_min_remaining_process_time(jobs_b) * number_b)
 
-
         # arrival_p
         elif t.current == t.arrival_p:
-            # print(f"Arrival p, number_p = {number_p}")
             if number_p > 0:
                 processed_time = (t.current - jobs_p[-1].last_event) / number_p
                 for job in jobs_p:
@@ -266,7 +258,6 @@ def model(seed, arrival_rate, auth):
 
         # completion_a
         elif t.current == t.completion_a:
-            # print(f"Completion a, number_a = {number_a}")
             processed_time = get_min_remaining_process_time(jobs_a)
             completed_job = None
 
@@ -303,7 +294,6 @@ def model(seed, arrival_rate, auth):
 
         # completion_b
         elif t.current == t.completion_b:
-            # print(f"Completion b, number_b = {number_b}")
             processed_time = get_min_remaining_process_time(jobs_b)
 
             for job in jobs_b:
@@ -337,7 +327,6 @@ def model(seed, arrival_rate, auth):
 
         # completion_p
         elif t.current == t.completion_p:
-            # print(f"Completion p, number_p = {number_p}")
             processed_time = get_min_remaining_process_time(jobs_p)
 
             for job in jobs_p:
@@ -418,6 +407,7 @@ def model(seed, arrival_rate, auth):
 
 
 def main():
+    seed = 123456789
     with open('data.csv', 'w', newline='') as csvfile:
         fieldnames = ['seed', 'auth', 'arrival_rate',
                       'interarrival_a', 'avg_service_a', 'avg_population_a', 'utilization_a', 'completion_a',
@@ -428,16 +418,17 @@ def main():
         writer.writerow(fieldnames)
 
         auth_types = [1, 2]
-        seeds = [123456789, 987654321, 1593574826, 7539514862, 765555555]
         arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
-        for auth in auth_types:
-            for seed in seeds:
+        for _ in range(0, 10):
+            plant_seeds(seed)
+            for auth in auth_types:
                 for arrival_rate in arrival_rates:
                     print(f"Simulate seed {seed}, arrival_rate {arrival_rate} and auth type {auth}")
                     data = [seed, auth, arrival_rate]
-                    data += model(seed, arrival_rate, auth)
+                    data += model(arrival_rate, auth)
                     print()
                     writer.writerow(data)
+            seed = get_seed()
 
 
 if __name__ == "__main__":
