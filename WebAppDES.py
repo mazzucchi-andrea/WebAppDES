@@ -1,4 +1,5 @@
 import csv
+from datetime import datetime
 from enum import Enum
 
 from rngs import select_stream, plant_seeds, get_seed
@@ -81,7 +82,6 @@ class Job:
         self.arrival = arrival
         self.remaining = get_service(job_type, auth)
         self.job_type = job_type
-        self.last_event = arrival
 
 
 class Server:
@@ -90,6 +90,7 @@ class Server:
         self.number = 0  # number in the node
         self.index = 0  # used to count departed jobs
         self.area = Track()
+        self.last_event = 0
 
 
 def get_min_remaining_process_time(jobs):
@@ -97,32 +98,14 @@ def get_min_remaining_process_time(jobs):
     return min_job.remaining
 
 
-def is_there_a_completion(jobs, process_time):
-    min_job = min(jobs, key=lambda job: job.remaining)
-    min_remaining = min_job.remaining
-    if min_remaining <= process_time:
-        return True, min_remaining
-    return False, 0
-
-
 def update_jobs_remaining_service_time(server, current_time):
     if server.number > 0:
-        processed_time = (current_time - server.jobs[-1].last_event) / server.number
+        processed_time = (current_time - server.last_event) / server.number
         for job in server.jobs:
             job.remaining -= processed_time
             job.last_event = current_time
-        
-def set_completion_a(server_a, t):
-    service_time = min(
-        get_min_remaining_process_time(server_a.jobs) * server_a.number,
-        (min(t.arrival_a1, t.arrival_a2, t.arrival_a3, t.completion_b, t.completion_p) - t.current) * server_a.number)
+    server.last_event = current_time
 
-    complete, remaining = is_there_a_completion(server_a.jobs, service_time)
-
-    if complete:
-        t.completion_a = t.current + remaining * server_a.number
-    else:
-        t.completion_a = INFINITY
 
 def model(arrival_rate, auth):
     global arrivalTemp
@@ -165,9 +148,9 @@ def model(arrival_rate, auth):
             if t.arrival_a1 > STOP:
                 t.last = t.current
                 t.arrival_a1 = INFINITY
-                
-            set_completion_a(server_a, t)
-            
+
+            t.completion_a = t.current + get_min_remaining_process_time(server_a.jobs) * server_a.number
+
         # arrival_a2
         elif t.current == t.arrival_a2:
             update_jobs_remaining_service_time(server_a, t.current)
@@ -177,7 +160,7 @@ def model(arrival_rate, auth):
 
             t.arrival_a2 = INFINITY
 
-            set_completion_a(server_a, t)
+            t.completion_a = t.current + get_min_remaining_process_time(server_a.jobs) * server_a.number
 
         # arrival_a3
         elif t.current == t.arrival_a3:
@@ -188,7 +171,7 @@ def model(arrival_rate, auth):
 
             t.arrival_a3 = INFINITY
 
-            set_completion_a(server_a, t)
+            t.completion_a = t.current + get_min_remaining_process_time(server_a.jobs) * server_a.number
 
         # arrival_b
         elif t.current == t.arrival_b:
@@ -219,7 +202,8 @@ def model(arrival_rate, auth):
 
             for job in server_a.jobs:
                 job.remaining -= processed_time
-                job.last_event = t.current
+
+            server_a.last_event = t.current
 
             for job in server_a.jobs:
                 if job.remaining == 0:
@@ -237,14 +221,7 @@ def model(arrival_rate, auth):
                 t.arrival_p = t.current
 
             if server_a.number > 0:
-                service_time = get_min_remaining_process_time(server_a.jobs) * server_a.number
-                complete, remaining = is_there_a_completion(server_a.jobs, service_time)
-
-                if complete:
-                    t.completion_a = t.current + remaining * server_a.number
-                else:
-                    t.completion_a = INFINITY
-
+                t.completion_a = t.current + get_min_remaining_process_time(server_a.jobs) * server_a.number
             else:
                 t.completion_a = INFINITY
 
@@ -254,7 +231,8 @@ def model(arrival_rate, auth):
 
             for job in server_b.jobs:
                 job.remaining -= processed_time
-                job.last_event = t.current
+
+            server_b.last_event = t.current
 
             for job in server_b.jobs:
                 if job.remaining == 0:
@@ -267,17 +245,7 @@ def model(arrival_rate, auth):
             t.arrival_a2 = t.current
 
             if server_b.number > 0:
-                if t.arrival_b == INFINITY:
-                    service_time = get_min_remaining_process_time(server_b.jobs) * server_b.number
-                else:
-                    service_time = (t.arrival_b - t.current) * server_b.number
-
-                complete, remaining = is_there_a_completion(server_b.jobs, service_time)
-
-                if complete:
-                    t.completion_b = t.current + remaining * server_b.number
-                else:
-                    t.completion_b = INFINITY
+                t.completion_b = t.current + get_min_remaining_process_time(server_b.jobs) * server_b.number
             else:
                 t.completion_b = INFINITY
 
@@ -287,7 +255,8 @@ def model(arrival_rate, auth):
 
             for job in server_p.jobs:
                 job.remaining -= processed_time
-                job.last_event = t.current
+
+            server_p.last_event = t.current
 
             for job in server_p.jobs:
                 if job.remaining == 0:
@@ -300,17 +269,7 @@ def model(arrival_rate, auth):
             t.arrival_a3 = t.current
 
             if server_p.number > 0:
-                if t.arrival_p == INFINITY:
-                    service_time = get_min_remaining_process_time(server_p.jobs) * server_p.number
-                else:
-                    service_time = (t.arrival_p - t.current) * server_p.number
-
-                complete, remaining = is_there_a_completion(server_p.jobs, service_time)
-
-                if complete:
-                    t.completion_p = t.current + remaining * server_p.number
-                else:
-                    t.completion_p = INFINITY
+                t.completion_p = t.current + get_min_remaining_process_time(server_p.jobs) * server_p.number
             else:
                 t.completion_p = INFINITY
 
@@ -325,36 +284,36 @@ def model(arrival_rate, auth):
     utilization_b = server_b.area.service / t.current
 
     interarrival_p = t.last / server_p.index
-    avg_service_p = server_p.area.node / server_p.index    
+    avg_service_p = server_p.area.node / server_p.index
     avg_population_p = server_p.area.node / t.current
     utilization_p = server_p.area.service / t.current
 
-    print("Server A statistics")
-    print("for {0} jobs".format(server_a.index))
-    print("\taverage interarrival time = {0:6.6f}".format(t.last / server_a.index))
-    print("\taverage service time .... = {0:6.6f}".format(server_a.area.node / server_a.index))
-    print("\taverage # in the node ... = {0:6.6f}".format(server_a.area.node / t.current))
-    print("\tutilization ............. = {0:6.6f}".format(server_a.area.service / t.current))
-
-    print("Server B statistics")
-    print("for {0} jobs".format(server_b.index))
-    print("\taverage interarrival time = {0:6.6f}".format(t.last / server_b.index))
-    print("\taverage service time .... = {0:6.6f}".format(server_b.area.node / server_b.index))
-    print("\taverage # in the node ... = {0:6.6f}".format(server_b.area.node / t.current))
-    print("\tutilization ............. = {0:6.6f}".format(server_b.area.service / t.current))
-
-    print("Server P statistics")
-    print("for {0} jobs".format(server_p.index))
-    print("\taverage interarrival time = {0:6.6f}".format(t.last / server_p.index))
-    print("\taverage service time .... = {0:6.6f}".format(server_p.area.node / server_p.index))
-    print("\taverage # in the node ... = {0:6.6f}".format(server_p.area.node / t.current))
-    print("\tutilization ............. = {0:6.6f}".format(server_p.area.service / t.current))
-
+    # print("Server A statistics")
+    # print("for {0} jobs".format(server_a.index))
+    # print("\taverage interarrival time = {0:6.6f}".format(t.last / server_a.index))
+    # print("\taverage service time .... = {0:6.6f}".format(server_a.area.node / server_a.index))
+    # print("\taverage # in the node ... = {0:6.6f}".format(server_a.area.node / t.current))
+    # print("\tutilization ............. = {0:6.6f}".format(server_a.area.service / t.current))
+    #
+    # print("Server B statistics")
+    # print("for {0} jobs".format(server_b.index))
+    # print("\taverage interarrival time = {0:6.6f}".format(t.last / server_b.index))
+    # print("\taverage service time .... = {0:6.6f}".format(server_b.area.node / server_b.index))
+    # print("\taverage # in the node ... = {0:6.6f}".format(server_b.area.node / t.current))
+    # print("\tutilization ............. = {0:6.6f}".format(server_b.area.service / t.current))
+    #
+    # print("Server P statistics")
+    # print("for {0} jobs".format(server_p.index))
+    # print("\taverage interarrival time = {0:6.6f}".format(t.last / server_p.index))
+    # print("\taverage service time .... = {0:6.6f}".format(server_p.area.node / server_p.index))
+    # print("\taverage # in the node ... = {0:6.6f}".format(server_p.area.node / t.current))
+    # print("\tutilization ............. = {0:6.6f}".format(server_p.area.service / t.current))
+    #
     avg_response_time = server_a.area.node / server_a.index + server_b.area.node / server_b.index + server_p.area.node / server_p.index
     avg_population = server_a.area.node / t.current + server_b.area.node / t.current + server_p.area.node / t.current
-    print()
-    print("Average Response Time = {0:6.6f}".format(avg_response_time))
-    print("Average Population = {0:6.6f}".format(avg_population))
+    # print()
+    # print("Average Response Time = {0:6.6f}".format(avg_response_time))
+    # print("Average Population = {0:6.6f}".format(avg_population))
 
     return [interarrival_a, avg_service_a, avg_population_a, utilization_a, server_a.index,
             interarrival_b, avg_service_b, avg_population_b, utilization_b, server_b.index,
@@ -364,6 +323,7 @@ def model(arrival_rate, auth):
 
 def main():
     seed = 123456789
+    start = datetime.now()
     with open('data.csv', 'w', newline='') as csvfile:
         fieldnames = ['seed', 'auth', 'arrival_rate',
                       'interarrival_a', 'avg_service_a', 'avg_population_a', 'utilization_a', 'completion_a',
@@ -375,7 +335,7 @@ def main():
 
         auth_types = [1, 2]
         arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
-        for _ in range(0, 10):
+        for _ in range(0, 5):
             plant_seeds(seed)
             for auth in auth_types:
                 for arrival_rate in arrival_rates:
@@ -385,6 +345,10 @@ def main():
                     print()
                     writer.writerow(data)
             seed = get_seed()
+
+    end = datetime.now()
+
+    print(f"Simulation time: {end - start}")
 
 
 if __name__ == "__main__":
