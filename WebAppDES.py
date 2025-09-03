@@ -22,6 +22,7 @@ def get_arrival(arrival_rate):
     arrivalTemp += exponential(1.0 / arrival_rate)
     return arrivalTemp
 
+
 def get_service(job_type, auth=1, b_improvement=False):
     avg_demand = -1
     if job_type == JobType.A1:
@@ -50,11 +51,9 @@ def get_service(job_type, auth=1, b_improvement=False):
             avg_demand = 0.7
     return exponential(avg_demand)
 
+
 class Time:
     arrival_a1 = INFINITY  # next arrival time for jobs of type A1
-    arrival_a2 = INFINITY  # next arrival time for jobs of type A2
-    arrival_a3 = INFINITY  # next arrival time for jobs of type A3
-    arrival_b = INFINITY  # next arrival_b time
     arrival_p = INFINITY
     completion_a = INFINITY  # next completion time on server A
     completion_b = INFINITY  # next completion time on server B
@@ -62,6 +61,7 @@ class Time:
     current = INFINITY  # current time
     next = INFINITY  # next (most imminent) event time
     last = INFINITY  # last arrival_a time
+
 
 class Track:
     def __init__(self):
@@ -72,6 +72,7 @@ class Track:
         self.node += (next_time - current_time) * number
         self.service += (next_time - current_time)
 
+
 class JobType(Enum):
     A1 = 1
     A2 = 2
@@ -79,11 +80,13 @@ class JobType(Enum):
     B = 4
     P = 5
 
+
 class Job:
     def __init__(self, arrival, job_type, auth=1, b_improvement=False):
         self.arrival = arrival
         self.remaining = get_service(job_type, auth, b_improvement)
         self.job_type = job_type
+
 
 class Server:
     def __init__(self):
@@ -110,26 +113,6 @@ class Server:
     def get_next_complete_process_time(self):
         return self.get_min_remaining_process_time() * self.number
 
-    def update_interarrival_stats(self, arrival_time):
-        self.arrivals += 1
-        d = arrival_time - self.last_arrival - self.avg_interarrival
-        self.last_arrival = arrival_time
-        self.interarrival_variance += d * d * (self.arrivals - 1) / self.arrivals
-        self.avg_interarrival += d / self.arrivals
-
-    def update_service_stats(self, service_time):
-        d = service_time - self.avg_service
-        self.service_variance += d * d * (self.index - 1) / self.index
-        self.avg_service += d / self.index
-
-    def update_jobs_remaining_service_time(self, current_time):
-        if self.number > 0:
-            processed_time = (current_time - self.last_event) / self.number
-            for job in self.jobs:
-                job.remaining -= processed_time
-                job.last_event = current_time
-        self.last_event = current_time
-
     def reset_stats(self, current_time):
         self.index = 0
         self.area.node = 0
@@ -143,6 +126,42 @@ class Server:
 
         self.avg_service = 0
         self.service_variance = 0
+
+    def process_arrival(self, new_job):
+        if self.number > 0:
+            processed_time = (new_job.arrival - self.last_event) / self.number
+            for job in self.jobs:
+                job.remaining -= processed_time
+                job.last_event = job.arrival
+        self.last_event = new_job.arrival
+
+        self.arrivals += 1
+        d = new_job.arrival - self.last_arrival - self.avg_interarrival
+        self.last_arrival = new_job.arrival
+        self.interarrival_variance += d * d * (self.arrivals - 1) / self.arrivals
+        self.avg_interarrival += d / self.arrivals
+
+        self.jobs.append(new_job)
+        self.number += 1
+
+    def process_completion(self, completion_time):
+        if self.number > 0:
+            processed_time = (completion_time - self.last_event) / self.number
+            for job in self.jobs:
+                job.remaining -= processed_time
+                job.last_event = completion_time
+        self.last_event = completion_time
+
+        self.jobs.sort(key=lambda x: x.remaining)
+        completed_job = self.jobs.pop(0)
+        self.index += 1
+        self.number -= 1
+
+        d = completion_time - completed_job.arrival - self.avg_service
+        self.service_variance += d * d * (self.index - 1) / self.index
+        self.avg_service += d / self.index
+
+        return completed_job
 
 
 def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
@@ -162,11 +181,9 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
     a3_completed_jobs = 0  # batch measure index
     means = []
 
-    while ((t.arrival_a1 < STOP or t.arrival_a2 != INFINITY or t.arrival_a3 != INFINITY or t.arrival_b != INFINITY or
-            t.arrival_p != INFINITY or server_a.number > 0 or server_b.number > 0 or server_p.number > 0)):
+    while t.arrival_a1 < STOP or server_a.number > 0 or server_b.number > 0 or server_p.number > 0:
 
-        t.next = min(t.arrival_a1, t.arrival_a2, t.arrival_a3, t.arrival_b, t.arrival_p, t.completion_a, t.completion_b,
-                     t.completion_p)  # next event time
+        t.next = min(t.arrival_a1, t.completion_a, t.completion_b, t.completion_p)  # next event time
 
         # update integrals
         if server_a.number > 0:
@@ -180,96 +197,24 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
 
         # arrival_a1
         if t.current == t.arrival_a1:
-            server_a.update_interarrival_stats(t.current)
-
-            server_a.update_jobs_remaining_service_time(t.current)
-
-            server_a.jobs.append(Job(t.arrival_a1, JobType.A1))
-            server_a.number += 1
+            server_a.process_arrival(Job(t.arrival_a1, JobType.A1))
 
             t.arrival_a1 = get_arrival(arrival_rate)
-
             if t.arrival_a1 > STOP:
                 t.last = t.current
                 t.arrival_a1 = INFINITY
-
             t.completion_a = t.current + server_a.get_next_complete_process_time()
-
-        # arrival_a2
-        elif t.current == t.arrival_a2:
-            server_a.update_interarrival_stats(t.current)
-
-            server_a.update_jobs_remaining_service_time(t.current)
-
-            server_a.jobs.append(Job(t.arrival_a2, JobType.A2))
-            server_a.number += 1
-
-            t.arrival_a2 = INFINITY
-
-            t.completion_a = t.current + server_a.get_next_complete_process_time()
-
-        # arrival_a3
-        elif t.current == t.arrival_a3:
-            server_a.update_interarrival_stats(t.current)
-
-            server_a.update_jobs_remaining_service_time(t.current)
-
-            server_a.jobs.append(Job(t.arrival_a3, JobType.A3, auth))
-            server_a.number += 1
-
-            t.arrival_a3 = INFINITY
-
-            t.completion_a = t.current + server_a.get_next_complete_process_time()
-
-        # arrival_b
-        elif t.current == t.arrival_b:
-            server_b.update_interarrival_stats(t.arrival_b)
-
-            server_b.update_jobs_remaining_service_time(t.current)
-
-            server_b.jobs.append(Job(t.arrival_b, JobType.B, b_improvement=b_improvement))
-            server_b.number += 1
-
-            t.arrival_b = INFINITY
-
-            t.completion_b = t.current + server_b.get_next_complete_process_time()
-
-        # arrival_p
-        elif t.current == t.arrival_p:
-            server_p.update_interarrival_stats(t.current)
-
-            server_p.update_jobs_remaining_service_time(t.current)
-
-            server_p.jobs.append(Job(t.arrival_p, JobType.P, auth))
-            server_p.number += 1
-
-            t.arrival_p = INFINITY
-
-            t.completion_p = t.current + server_p.get_next_complete_process_time()
 
         # completion_a
         elif t.current == t.completion_a:
-            processed_time = server_a.get_min_remaining_process_time()
-            completed_job = None
-
-            for job in server_a.jobs:
-                job.remaining -= processed_time
-                if job.remaining == 0:
-                    completed_job = job
-
-            server_a.jobs.remove(completed_job)
-
-            server_a.last_event = t.current
-
-            server_a.index += 1
-            server_a.number -= 1
-
-            server_a.update_service_stats(t.current - completed_job.arrival)
+            completed_job = server_a.process_completion(t.completion_a)
 
             if completed_job.job_type == JobType.A1:
-                t.arrival_b = t.current
+                server_b.process_arrival(Job(t.completion_a, JobType.B, b_improvement=b_improvement))
+                t.completion_b = t.current + server_b.get_next_complete_process_time()
             elif completed_job.job_type == JobType.A2:
-                t.arrival_p = t.current
+                server_p.process_arrival(Job(t.current, JobType.P, auth))
+                t.completion_p = t.current + server_p.get_next_complete_process_time()
             else:
                 a3_completed_jobs += 1
 
@@ -280,24 +225,9 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
 
         # completion_b
         elif t.current == t.completion_b:
-            processed_time = server_b.get_min_remaining_process_time()
-            completed_job = None
-
-            for job in server_b.jobs:
-                job.remaining -= processed_time
-                if job.remaining == 0:
-                    completed_job = job
-
-            server_b.jobs.remove(completed_job)
-
-            server_b.last_event = t.current
-
-            server_b.index += 1
-            server_b.number -= 1
-
-            server_b.update_service_stats(t.current - completed_job.arrival)
-
-            t.arrival_a2 = t.current
+            server_b.process_completion(t.completion_b)
+            server_a.process_arrival(Job(t.current, JobType.A2))
+            t.completion_a = t.current + server_a.get_next_complete_process_time()
 
             if server_b.number > 0:
                 t.completion_b = t.current + server_b.get_next_complete_process_time()
@@ -306,24 +236,10 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
 
         # completion_p
         elif t.current == t.completion_p:
-            processed_time = server_p.get_min_remaining_process_time()
-            completed_job = None
+            server_p.process_completion(t.completion_p)
 
-            for job in server_p.jobs:
-                job.remaining -= processed_time
-                if job.remaining == 0:
-                    completed_job = job
-
-            server_p.jobs.remove(completed_job)
-
-            server_p.last_event = t.current
-
-            server_p.index += 1
-            server_p.number -= 1
-
-            server_p.update_service_stats(t.current - completed_job.arrival)
-
-            t.arrival_a3 = t.current
+            server_a.process_arrival(Job(t.current, JobType.A3, auth))
+            t.completion_a = t.current + server_a.get_next_complete_process_time()
 
             if server_p.number > 0:
                 t.completion_p = t.current + server_p.get_next_complete_process_time()
@@ -345,10 +261,6 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
             t.completion_b -= t.current
             t.completion_p -= t.current
             t.arrival_a1 -= t.current
-            t.arrival_a2 -= t.current
-            t.arrival_a3 -= t.current
-            t.arrival_b -= t.current
-            t.arrival_p -= t.current
             t.current = START
             arrivalTemp = START
 
@@ -478,11 +390,53 @@ def batch_means_simulation():
     print(f"Batch Means Simulation time: {end - start}\n")
 
 
+def obj3_simulation():
+    global STOP
+
+    start = datetime.now()
+    seed = 123456789
+    STOP = 28880
+    print("Start Objective 3 Simulation")
+    with open('data_objective_3.csv', 'w', newline='') as csvfile:
+        fieldnames = ['seed', 'b_improvement', 'arrival_rate',
+                      'interarrival_a', 'avg_service_a', 'avg_population_a', 'utilization_a', 'completion_a',
+                      'interarrival_b', 'avg_service_b', 'avg_population_b', 'utilization_b', 'completion_b',
+                      'interarrival_p', 'avg_service_p', 'avg_population_p', 'utilization_p', 'completion_p',
+                      'avg_response_time', 'avg_population']
+        writer = csv.writer(csvfile)
+        writer.writerow(fieldnames)
+
+        arrival_rates_no_impr = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
+        arrival_rates_impr = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4]
+        for _ in range(0, 64):
+            for b_improvement in [True, False]:
+                if b_improvement:
+                    for arrival_rate in arrival_rates_impr:
+                        plant_seeds(seed)
+                        print(f"Objective 3 : seed {seed}, arrival_rate {arrival_rate} and improvement {b_improvement}")
+                        data = [seed, b_improvement, arrival_rate]
+                        data += model(arrival_rate, 1, b_improvement=b_improvement)
+                        writer.writerow(data)
+                else:
+                    for arrival_rate in arrival_rates_no_impr:
+                        plant_seeds(seed)
+                        print(f"Objective 3 : seed {seed}, arrival_rate {arrival_rate} and improvement {b_improvement}")
+                        data = [seed, b_improvement, arrival_rate]
+                        data += model(arrival_rate, 1, b_improvement=b_improvement)
+                        writer.writerow(data)
+            seed = get_seed()
+
+    end = datetime.now()
+
+    print(f"Objective 3 Simulation time: {end - start}\n")
+
+
 def main():
     start = datetime.now()
 
-    # finite_horizon_simulation()
+    finite_horizon_simulation()
     batch_means_simulation()
+    obj3_simulation()
 
     end = datetime.now()
     print(f"Total Simulation time: {end - start}\n")
