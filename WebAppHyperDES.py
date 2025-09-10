@@ -5,7 +5,7 @@ from enum import Enum
 import numpy as np
 
 from rngs import select_stream, plant_seeds, get_seed
-from rvgs import exponential
+from rvgs import exponential, bernoulli
 from rvms import idfStudent
 
 ALPHA = 0.05
@@ -15,36 +15,41 @@ INFINITY = (100.0 * STOP)  # must be much larger than STOP
 arrivalTemp = START
 
 
-def get_arrival(arrival_rate):
+def get_arrival(p, arrival_rate):
     global arrivalTemp
 
     select_stream(0)
-    arrivalTemp += exponential(1.0 / arrival_rate)
+    r = bernoulli(p)
+    select_stream(1)
+    if r == 1:
+        arrivalTemp += exponential(1 / (2 * p * arrival_rate))
+    else:
+        arrivalTemp += exponential(1 / (2 * (1 - p) * arrival_rate))
     return arrivalTemp
 
 
 def get_service(job_type, auth=1, b_improvement=False):
     avg_demand = -1
     if job_type == JobType.A1:
-        select_stream(1)
+        select_stream(2)
         avg_demand = 0.2
     elif job_type == JobType.A2:
-        select_stream(2)
+        select_stream(3)
         avg_demand = 0.4
     elif job_type == JobType.A3:
-        select_stream(3)
+        select_stream(4)
         if auth == 1:
             avg_demand = 0.1
         else:
             avg_demand = 0.15
     elif job_type == JobType.B:
-        select_stream(4)
+        select_stream(5)
         if b_improvement:
             avg_demand = 0.4
         else:
             avg_demand = 0.8
     elif job_type == JobType.P:
-        select_stream(5)
+        select_stream(6)
         if auth == 1:
             avg_demand = 0.4
         else:
@@ -163,7 +168,7 @@ class Server:
         return completed_job
 
 
-def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
+def model(p, arrival_rate, auth, b=0, k=0, b_improvement=False):
     global arrivalTemp
     arrivalTemp = START
     batch_enabled = b != 0 and k != 0
@@ -175,7 +180,7 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
     t = Time()
 
     t.current = START  # set the clock
-    t.arrival_a = get_arrival(arrival_rate)  # schedule the first arrival_a
+    t.arrival_a = get_arrival(p, arrival_rate)  # schedule the first arrival_a
 
     arrivals_a1 = 0  # batch measure index
     means = []
@@ -198,7 +203,7 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
         if t.current == t.arrival_a:
             server_a.process_arrival(Job(t.arrival_a, JobType.A1))
 
-            t.arrival_a = get_arrival(arrival_rate)
+            t.arrival_a = get_arrival(p, arrival_rate)
             if t.arrival_a > STOP:
                 t.last = t.current
                 t.arrival_a = INFINITY
@@ -313,12 +318,12 @@ def get_simulation_statistics(server_a, server_b, server_p, current_time):
             utilization_a, utilization_b, utilization_p)
 
 
-def obj_1_2_batch_means_simulation():
+def batch_means_simulation():
     start = datetime.now()
     seed = 123456789
     print("Start Batch Means Simulation")
-    with open('data_obj_1_2_batch_means.csv', 'w', newline='') as csvfile:
-        fieldnames = ['seed', 'auth', 'arrival_rate',
+    with open('data_hyper_batch_means.csv', 'w', newline='') as csvfile:
+        fieldnames = ['seed', 'p', 'arrival_rate',
                       'interarrival_a', 'interarrival_a_ci',
                       'avg_service_a', 'avg_service_a_ci',
                       'avg_population_a', 'avg_population_a_ci',
@@ -339,74 +344,24 @@ def obj_1_2_batch_means_simulation():
         writer = csv.writer(csvfile)
         writer.writerow(fieldnames)
 
-        auth_types = [1, 2]
+        hyper = [0.1, 0.2]
         arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
-        for auth in auth_types:
+        for p in hyper:
             for arrival_rate in arrival_rates:
                 plant_seeds(seed)
-                print(f"Batch Means: seed {seed}, arrival_rate {arrival_rate} and auth type {auth}")
-                data = [seed, auth, arrival_rate]
-                data += model(arrival_rate, auth, 32768, 64)
+                print(f"Batch Means: seed {seed}, arrival_rate {arrival_rate} and p {p}")
+                data = [seed, p, arrival_rate]
+                data += model(p, arrival_rate, 1, 8192, 64)
                 writer.writerow(data)
 
     end = datetime.now()
     print(f"Batch Means Simulation time: {end - start}\n")
 
 
-def obj3_batch_means_simulation():
-    start = datetime.now()
-    seed = 123456789
-    print("Start Batch Means Simulation Objective 3")
-    with open('data_obj_3_batch_means.csv', 'w', newline='') as csvfile:
-        fieldnames = ['seed', 'b_improvement', 'arrival_rate',
-                      'interarrival_a', 'interarrival_a_ci',
-                      'avg_service_a', 'avg_service_a_ci',
-                      'avg_population_a', 'avg_population_a_ci',
-                      'utilization_a', 'utilization_a_ci',
-                      'completion_a', 'completion_a_ci',
-                      'interarrival_b', 'interarrival_b_ci',
-                      'avg_service_b', 'avg_service_b_ci',
-                      'avg_population_b', 'avg_population_b_ci',
-                      'utilization_b', 'utilization_b_ci',
-                      'completion_b', 'completion_b_ci',
-                      'interarrival_p', 'interarrival_p_ci',
-                      'avg_service_p', 'avg_service_p_ci',
-                      'avg_population_p', 'avg_population_p_ci',
-                      'utilization_p', 'utilization_p_ci',
-                      'completion_p', 'completion_p_ci',
-                      'avg_response_time', 'avg_response_time_ci',
-                      'avg_population', 'avg_population_ci']
-        writer = csv.writer(csvfile)
-        writer.writerow(fieldnames)
-
-        arrival_rates_no_impr = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
-        arrival_rates_impr = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25,
-                              1.3, 1.35, 1.4]
-        for b_improvement in [True, False]:
-            if b_improvement:
-                for arrival_rate in arrival_rates_impr:
-                    plant_seeds(seed)
-                    print(f"Objective 3 : seed {seed}, arrival_rate {arrival_rate} and improvement {b_improvement}")
-                    data = [seed, b_improvement, arrival_rate]
-                    data += model(arrival_rate, 1, 8192, 64, b_improvement)
-                    writer.writerow(data)
-            else:
-                for arrival_rate in arrival_rates_no_impr:
-                    plant_seeds(seed)
-                    print(f"Objective 3 : seed {seed}, arrival_rate {arrival_rate} and improvement {b_improvement}")
-                    data = [seed, b_improvement, arrival_rate]
-                    data += model(arrival_rate, 1, 8192, 64, b_improvement)
-                    writer.writerow(data)
-
-    end = datetime.now()
-    print(f"Objective 3 Batch Means Simulation time: {end - start}\n")
-
-
 def main():
     start = datetime.now()
 
-    obj_1_2_batch_means_simulation()
-    obj3_batch_means_simulation()
+    batch_means_simulation()
 
     end = datetime.now()
     print(f"Total Simulation time: {end - start}\n")

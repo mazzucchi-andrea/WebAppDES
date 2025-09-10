@@ -2,17 +2,16 @@ import csv
 from datetime import datetime
 from enum import Enum
 
-import numpy as np
 
 from rngs import select_stream, plant_seeds, get_seed
 from rvgs import exponential
-from rvms import idfStudent
 
 ALPHA = 0.05
 START = 0.0  # initial time
-STOP = 5760000.0  # terminal time
+STOP = 86400.0  # terminal time
 INFINITY = (100.0 * STOP)  # must be much larger than STOP
 arrivalTemp = START
+CAMP_INTERVAL = 300
 
 
 def get_arrival(arrival_rate):
@@ -53,13 +52,15 @@ def get_service(job_type, auth=1, b_improvement=False):
 
 
 class Time:
-    arrival_a = INFINITY  # next arrival time for jobs of type A1
+    arrival_a1 = INFINITY  # next arrival time for jobs of type A1
+    arrival_p = INFINITY
     completion_a = INFINITY  # next completion time on server A
     completion_b = INFINITY  # next completion time on server B
     completion_p = INFINITY  # next completion time on server P
     current = INFINITY  # current time
     next = INFINITY  # next (most imminent) event time
     last = INFINITY  # last arrival_a time
+    camp = INFINITY
 
 
 class Track:
@@ -163,10 +164,9 @@ class Server:
         return completed_job
 
 
-def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
+def model(arrival_rate,  writer, auth, b_improvement=False,):
     global arrivalTemp
     arrivalTemp = START
-    batch_enabled = b != 0 and k != 0
 
     server_a = Server()
     server_b = Server()
@@ -175,14 +175,12 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
     t = Time()
 
     t.current = START  # set the clock
-    t.arrival_a = get_arrival(arrival_rate)  # schedule the first arrival_a
+    t.arrival_a1 = get_arrival(arrival_rate)  # schedule the first arrival_a
+    t.camp = CAMP_INTERVAL
 
-    arrivals_a1 = 0  # batch measure index
-    means = []
+    while t.arrival_a1 < STOP or server_a.number > 0 or server_b.number > 0 or server_p.number > 0:
 
-    while t.arrival_a < STOP or server_a.number > 0 or server_b.number > 0 or server_p.number > 0:
-
-        t.next = min(t.arrival_a, t.completion_a, t.completion_b, t.completion_p)  # next event time
+        t.next = min(t.arrival_a1, t.completion_a, t.completion_b, t.completion_p, t.camp)  # next event time
 
         # update integrals
         if server_a.number > 0:
@@ -195,15 +193,14 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
         t.current = t.next  # advance the clock
 
         # arrival_a1
-        if t.current == t.arrival_a:
-            server_a.process_arrival(Job(t.arrival_a, JobType.A1))
+        if t.current == t.arrival_a1:
+            server_a.process_arrival(Job(t.arrival_a1, JobType.A1))
 
-            t.arrival_a = get_arrival(arrival_rate)
-            if t.arrival_a > STOP:
+            t.arrival_a1 = get_arrival(arrival_rate)
+            if t.arrival_a1 > STOP:
                 t.last = t.current
-                t.arrival_a = INFINITY
+                t.arrival_a1 = INFINITY
             t.completion_a = t.current + server_a.get_next_complete_process_time()
-            arrivals_a1 += 1
 
         # completion_a
         elif t.current == t.completion_a:
@@ -244,58 +241,9 @@ def model(arrival_rate, auth, b=0, k=0, b_improvement=False):
             else:
                 t.completion_p = INFINITY
 
-        if batch_enabled and arrivals_a1 == b:
-            (avg_population, avg_population_a, avg_population_b, avg_population_p, avg_response_time, utilization_a,
-             utilization_b, utilization_p) = (get_simulation_statistics(server_a, server_b, server_p, t.current))
-
-            means.append(
-                [server_a.avg_interarrival, server_a.avg_service, avg_population_a, utilization_a, server_a.index,
-                 server_b.avg_interarrival, server_b.avg_service, avg_population_b, utilization_b, server_b.index,
-                 server_p.avg_interarrival, server_p.avg_service, avg_population_p, utilization_p, server_p.index,
-                 avg_response_time, avg_population])
-
-            arrivals_a1 = 0
-            t.completion_a -= t.current
-            t.completion_b -= t.current
-            t.completion_p -= t.current
-            t.arrival_a -= t.current
-            t.current = START
-            arrivalTemp = START
-
-            server_a.reset_stats(t.current)
-            server_b.reset_stats(t.current)
-            server_p.reset_stats(t.current)
-
-            for j in server_a.jobs:
-                j.arrival = t.current
-            for j in server_b.jobs:
-                j.arrival = t.current
-            for j in server_p.jobs:
-                j.arrival = t.current
-
-            if len(means) == k:
-                data = []
-                for i in range(17):
-                    mean = 0
-
-                    for m in means:
-                        mean += m[i]
-                    mean /= k
-                    data.append(mean)
-                    n = 0
-                    for m in means:
-                        n += pow((m[i] - mean), 2)
-                    data.append(idfStudent(k - 1, 1 - ALPHA / 2) * np.sqrt(n / (k - 1)) / np.sqrt(k - 1))
-
-                return data
-
-    (avg_population, avg_population_a, avg_population_b, avg_population_p, avg_response_time, utilization_a,
-     utilization_b, utilization_p) = get_simulation_statistics(server_a, server_b, server_p, t.current)
-
-    return [server_a.avg_interarrival, server_a.avg_service, avg_population_a, utilization_a, server_a.index,
-            server_b.avg_interarrival, server_b.avg_service, avg_population_b, utilization_b, server_b.index,
-            server_p.avg_interarrival, server_p.avg_service, avg_population_p, utilization_p, server_p.index,
-            avg_response_time, avg_population]
+        elif t.current == t.camp:
+            writer.writerow((t.current, server_a.avg_service, server_b.avg_service, server_p.avg_service, 3 * server_a.avg_service + server_b.avg_service + server_p.avg_service))
+            t.camp += CAMP_INTERVAL
 
 
 def get_simulation_statistics(server_a, server_b, server_p, current_time):
@@ -313,100 +261,37 @@ def get_simulation_statistics(server_a, server_b, server_p, current_time):
             utilization_a, utilization_b, utilization_p)
 
 
-def obj_1_2_batch_means_simulation():
+def obj_1_2_finite_horizon_simulation():
+    global STOP
+
     start = datetime.now()
     seed = 123456789
-    print("Start Batch Means Simulation")
-    with open('data_obj_1_2_batch_means.csv', 'w', newline='') as csvfile:
-        fieldnames = ['seed', 'auth', 'arrival_rate',
-                      'interarrival_a', 'interarrival_a_ci',
-                      'avg_service_a', 'avg_service_a_ci',
-                      'avg_population_a', 'avg_population_a_ci',
-                      'utilization_a', 'utilization_a_ci',
-                      'completion_a', 'completion_a_ci',
-                      'interarrival_b', 'interarrival_b_ci',
-                      'avg_service_b', 'avg_service_b_ci',
-                      'avg_population_b', 'avg_population_b_ci',
-                      'utilization_b', 'utilization_b_ci',
-                      'completion_b', 'completion_b_ci',
-                      'interarrival_p', 'interarrival_p_ci',
-                      'avg_service_p', 'avg_service_p_ci',
-                      'avg_population_p', 'avg_population_p_ci',
-                      'utilization_p', 'utilization_p_ci',
-                      'completion_p', 'completion_p_ci',
-                      'avg_response_time', 'avg_response_time_ci',
-                      'avg_population', 'avg_population_ci']
-        writer = csv.writer(csvfile)
-        writer.writerow(fieldnames)
-
-        auth_types = [1, 2]
-        arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
+    auth_types = [1, 2]
+    arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
+    print("Start Finite Horizon Simulation")
+    for _ in range(0, 8):
         for auth in auth_types:
-            for arrival_rate in arrival_rates:
-                plant_seeds(seed)
-                print(f"Batch Means: seed {seed}, arrival_rate {arrival_rate} and auth type {auth}")
-                data = [seed, auth, arrival_rate]
-                data += model(arrival_rate, auth, 32768, 64)
-                writer.writerow(data)
+            for b_improvement in [True, False]:
+                for arrival_rate in arrival_rates:
+                    with open(f'conv/data_{seed}_{arrival_rate}_{auth}_{b_improvement}_conv.csv', 'w', newline='') as csvfile:
+                        fieldnames = ['time', 'avg_service_a', 'avg_service_b', 'avg_service_p', 'avg_service']
+                        writer = csv.writer(csvfile)
+                        writer.writerow(fieldnames)
+                        plant_seeds(seed)
+                        print(f"Finite Horizon: seed {seed}, arrival_rate {arrival_rate},  auth type {auth}, b improvement {b_improvement}")
+                        model(arrival_rate, writer, auth, b_improvement)
+        seed = get_seed()
+
 
     end = datetime.now()
-    print(f"Batch Means Simulation time: {end - start}\n")
 
-
-def obj3_batch_means_simulation():
-    start = datetime.now()
-    seed = 123456789
-    print("Start Batch Means Simulation Objective 3")
-    with open('data_obj_3_batch_means.csv', 'w', newline='') as csvfile:
-        fieldnames = ['seed', 'b_improvement', 'arrival_rate',
-                      'interarrival_a', 'interarrival_a_ci',
-                      'avg_service_a', 'avg_service_a_ci',
-                      'avg_population_a', 'avg_population_a_ci',
-                      'utilization_a', 'utilization_a_ci',
-                      'completion_a', 'completion_a_ci',
-                      'interarrival_b', 'interarrival_b_ci',
-                      'avg_service_b', 'avg_service_b_ci',
-                      'avg_population_b', 'avg_population_b_ci',
-                      'utilization_b', 'utilization_b_ci',
-                      'completion_b', 'completion_b_ci',
-                      'interarrival_p', 'interarrival_p_ci',
-                      'avg_service_p', 'avg_service_p_ci',
-                      'avg_population_p', 'avg_population_p_ci',
-                      'utilization_p', 'utilization_p_ci',
-                      'completion_p', 'completion_p_ci',
-                      'avg_response_time', 'avg_response_time_ci',
-                      'avg_population', 'avg_population_ci']
-        writer = csv.writer(csvfile)
-        writer.writerow(fieldnames)
-
-        arrival_rates_no_impr = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
-        arrival_rates_impr = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25,
-                              1.3, 1.35, 1.4]
-        for b_improvement in [True, False]:
-            if b_improvement:
-                for arrival_rate in arrival_rates_impr:
-                    plant_seeds(seed)
-                    print(f"Objective 3 : seed {seed}, arrival_rate {arrival_rate} and improvement {b_improvement}")
-                    data = [seed, b_improvement, arrival_rate]
-                    data += model(arrival_rate, 1, 8192, 64, b_improvement)
-                    writer.writerow(data)
-            else:
-                for arrival_rate in arrival_rates_no_impr:
-                    plant_seeds(seed)
-                    print(f"Objective 3 : seed {seed}, arrival_rate {arrival_rate} and improvement {b_improvement}")
-                    data = [seed, b_improvement, arrival_rate]
-                    data += model(arrival_rate, 1, 8192, 64, b_improvement)
-                    writer.writerow(data)
-
-    end = datetime.now()
-    print(f"Objective 3 Batch Means Simulation time: {end - start}\n")
+    print(f"Finite Horizon Simulation time: {end - start}\n")
 
 
 def main():
     start = datetime.now()
 
-    obj_1_2_batch_means_simulation()
-    obj3_batch_means_simulation()
+    obj_1_2_finite_horizon_simulation()
 
     end = datetime.now()
     print(f"Total Simulation time: {end - start}\n")
