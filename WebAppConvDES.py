@@ -2,7 +2,6 @@ import csv
 from datetime import datetime
 from enum import Enum
 
-
 from rngs import select_stream, plant_seeds, get_seed
 from rvgs import exponential
 
@@ -164,7 +163,7 @@ class Server:
         return completed_job
 
 
-def model(arrival_rate,  writer, auth, b_improvement=False,):
+def model(arrival_rate, writer, auth, b_improvement=False, ):
     global arrivalTemp
     arrivalTemp = START
 
@@ -242,7 +241,8 @@ def model(arrival_rate,  writer, auth, b_improvement=False,):
                 t.completion_p = INFINITY
 
         elif t.current == t.camp:
-            writer.writerow((t.current, server_a.avg_service, server_b.avg_service, server_p.avg_service, 3 * server_a.avg_service + server_b.avg_service + server_p.avg_service))
+            writer.writerow((t.current, server_a.avg_service, server_b.avg_service, server_p.avg_service,
+                             3 * server_a.avg_service + server_b.avg_service + server_p.avg_service))
             t.camp += CAMP_INTERVAL
 
 
@@ -273,15 +273,16 @@ def obj_1_2_finite_horizon_simulation():
         for auth in auth_types:
             for b_improvement in [True, False]:
                 for arrival_rate in arrival_rates:
-                    with open(f'conv/data_{seed}_{arrival_rate}_{auth}_{b_improvement}_conv.csv', 'w', newline='') as csvfile:
+                    with open(f'conv/data_{seed}_{arrival_rate}_{auth}_{b_improvement}_conv.csv', 'w',
+                              newline='') as csvfile:
                         fieldnames = ['time', 'avg_service_a', 'avg_service_b', 'avg_service_p', 'avg_service']
                         writer = csv.writer(csvfile)
                         writer.writerow(fieldnames)
                         plant_seeds(seed)
-                        print(f"Finite Horizon: seed {seed}, arrival_rate {arrival_rate},  auth type {auth}, b improvement {b_improvement}")
+                        print(
+                            f"Finite Horizon: seed {seed}, arrival_rate {arrival_rate},  auth type {auth}, b improvement {b_improvement}")
                         model(arrival_rate, writer, auth, b_improvement)
         seed = get_seed()
-
 
     end = datetime.now()
 

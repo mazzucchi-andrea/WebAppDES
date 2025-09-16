@@ -242,7 +242,7 @@ def batch_means_simulation():
     seed = 123456789
     print("Start Batch Means Simulation")
     with open('data_single_ps_batch_means.csv', 'w', newline='') as csvfile:
-        fieldnames = ['seed', 'arrival_rate',
+        fieldnames = ['arrival_rate',
                       'interarrival_a', 'interarrival_a_ci',
                       'avg_service_a', 'avg_service_a_ci',
                       'avg_population_a', 'avg_population_a_ci',
@@ -254,8 +254,8 @@ def batch_means_simulation():
         arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
         for arrival_rate in arrival_rates:
             plant_seeds(seed)
-            print(f"Batch Means: seed {seed}, arrival_rate {arrival_rate}")
-            data = [seed, arrival_rate]
+            print(f"Batch Means: arrival_rate {arrival_rate}")
+            data = [arrival_rate]
             data += model(arrival_rate, 8192, 64)
             writer.writerow(data)
 
@@ -266,7 +266,7 @@ def batch_means_simulation():
 def main():
     start = datetime.now()
 
-    #finite_horizon_simulation()
+    # finite_horizon_simulation()
     batch_means_simulation()
 
     end = datetime.now()

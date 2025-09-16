@@ -4,7 +4,7 @@ from enum import Enum
 
 import numpy as np
 
-from rngs import select_stream, plant_seeds, get_seed
+from rngs import select_stream, plant_seeds
 from rvgs import exponential, bernoulli
 from rvms import idfStudent
 
@@ -12,8 +12,10 @@ ALPHA = 0.05
 START = 0.0  # initial time
 STOP = 5760000.0  # terminal time
 INFINITY = (100.0 * STOP)  # must be much larger than STOP
-arrivalTemp = START
+B = 8192
+K = 128
 
+arrivalTemp = START
 
 def get_arrival(arrival_rate):
     global arrivalTemp
@@ -48,9 +50,11 @@ def get_service(job_type, auth=1):
             avg_demand = 0.7
     return exponential(avg_demand)
 
+
 def round_robin():
     select_stream(6)
     return bernoulli(0.5)
+
 
 class Time:
     arrival_a = INFINITY  # next arrival time for jobs of type A1
@@ -353,7 +357,8 @@ def get_simulation_statistics(server_a1, server_a2, server_b, server_p, current_
     utilization_b = server_b.area.service / current_time
     avg_population_p = server_p.area.node / current_time
     utilization_p = server_p.area.service / current_time
-    avg_response_time = 3 * (server_a1.avg_service + server_a2.avg_service) / 2 + server_b.avg_service + server_p.avg_service
+    avg_response_time = 3 * (
+            server_a1.avg_service + server_a2.avg_service) / 2 + server_b.avg_service + server_p.avg_service
     avg_population = server_a1.area.node / current_time + server_a2.area.node / current_time + server_b.area.node / current_time + server_p.area.node / current_time
     return (avg_population,
             avg_population_a1, avg_population_a2, avg_population_b, avg_population_p,
@@ -366,7 +371,7 @@ def batch_means_simulation():
     seed = 123456789
     print("Start Batch Means Simulation")
     with open('data_horizontalA_batch_means.csv', 'w', newline='') as csvfile:
-        fieldnames = ['seed', 'arrival_rate',
+        fieldnames = ['arrival_rate',
                       'interarrival_a1', 'interarrival_a1_ci',
                       'avg_service_a1', 'avg_service_a1_ci',
                       'avg_population_a1', 'avg_population_a1_ci',
@@ -392,10 +397,12 @@ def batch_means_simulation():
         writer = csv.writer(csvfile)
         writer.writerow(fieldnames)
 
-        arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4]
+        arrival_rates = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3,
+                         1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2, 2.05, 2.1, 2.15,
+                         2.2, 2.25, 2.3, 2.35, 2.4, 2.45]
         for arrival_rate in arrival_rates:
             plant_seeds(seed)
-            print(f"Batch Means: seed {seed}, arrival_rate {arrival_rate}")
+            print(f"Batch Means: arrival_rate {arrival_rate}")
             data = [seed, arrival_rate]
             data += model(arrival_rate, 1, 8192, 64)
             writer.writerow(data)

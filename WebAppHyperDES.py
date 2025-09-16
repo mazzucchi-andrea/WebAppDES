@@ -4,7 +4,7 @@ from enum import Enum
 
 import numpy as np
 
-from rngs import select_stream, plant_seeds, get_seed
+from rngs import select_stream, plant_seeds
 from rvgs import exponential, bernoulli
 from rvms import idfStudent
 
@@ -12,6 +12,9 @@ ALPHA = 0.05
 START = 0.0  # initial time
 STOP = 5760000.0  # terminal time
 INFINITY = (100.0 * STOP)  # must be much larger than STOP
+B = 8192
+K = 128
+
 arrivalTemp = START
 
 
@@ -323,7 +326,7 @@ def batch_means_simulation():
     seed = 123456789
     print("Start Batch Means Simulation")
     with open('data_hyper_batch_means.csv', 'w', newline='') as csvfile:
-        fieldnames = ['seed', 'p', 'arrival_rate',
+        fieldnames = ['p', 'arrival_rate',
                       'interarrival_a', 'interarrival_a_ci',
                       'avg_service_a', 'avg_service_a_ci',
                       'avg_population_a', 'avg_population_a_ci',
@@ -349,9 +352,9 @@ def batch_means_simulation():
         for p in hyper:
             for arrival_rate in arrival_rates:
                 plant_seeds(seed)
-                print(f"Batch Means: seed {seed}, arrival_rate {arrival_rate} and p {p}")
-                data = [seed, p, arrival_rate]
-                data += model(p, arrival_rate, 1, 8192, 64)
+                print(f"Batch Means: arrival_rate {arrival_rate} and p {p}")
+                data = [p, arrival_rate]
+                data += model(p, arrival_rate, 1, B, K)
                 writer.writerow(data)
 
     end = datetime.now()
