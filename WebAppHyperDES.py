@@ -13,7 +13,7 @@ START = 0.0  # initial time
 STOP = 5760000.0  # terminal time
 INFINITY = (100.0 * STOP)  # must be much larger than STOP
 B = 8192
-K = 128
+K = 64
 
 arrivalTemp = START
 
